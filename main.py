@@ -21,3 +21,6 @@ async def wayback_proxy(url: str):
         return response.json()
     except requests.RequestException as e:
         return {"error": str(e)}
+
+if __name__ == "__main__":
+        uvicorn.run(app, host="0.0.0.0", port=8000)
