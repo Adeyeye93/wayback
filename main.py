@@ -5,7 +5,7 @@ import csv
 from fastapi.responses import FileResponse
 import json
 from pathlib import Path
-from fastapi.middleware.cors import CORSMiddlewaree
+from fastapi.middleware.cors import CORSMiddleware
 import requests
 
 app = FastAPI()
