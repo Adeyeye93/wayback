@@ -31,7 +31,14 @@ async def wayback_proxy(url: str):
 
 
 languages = [
-    "af", "az"
+    "af", "az", "id", "ms", "bs", "ca", "cs", "da", "de", "et",
+    "en", "es", "es-419", "eu", "fil", "fr", "gl", "hr", "zu",
+    "is", "it", "sw", "lv", "lt", "hu", "nl", "no", "uz", "pl",
+    "pt-BR", "pt-PT", "ro", "sq", "sk", "sl", "fi", "sv", "vi",
+    "tr", "el", "bg", "ky", "kk", "mk", "mn", "ru", "sr", "uk",
+    "ka", "hy", "he", "ur", "ar", "fa", "am", "ne", "hi", "mr",
+    "bn", "pa", "gu", "ta", "te", "kn", "ml", "si", "th", "lo",
+    "my", "km", "ko", "ja", "zh-CN", "zh-TW"
 ]
 
 
