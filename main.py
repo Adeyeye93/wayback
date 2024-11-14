@@ -31,14 +31,7 @@ async def wayback_proxy(url: str):
 
 
 languages = [
-    "af", "az", "id", "ms", "bs", "ca", "cs", "da", "de", "et",
-    "en", "es", "es-419", "eu", "fil", "fr", "gl", "hr", "zu",
-    "is", "it", "sw", "lv", "lt", "hu", "nl", "no", "uz", "pl",
-    "pt-BR", "pt-PT", "ro", "sq", "sk", "sl", "fi", "sv", "vi",
-    "tr", "el", "bg", "ky", "kk", "mk", "mn", "ru", "sr", "uk",
-    "ka", "hy", "he", "ur", "ar", "fa", "am", "ne", "hi", "mr",
-    "bn", "pa", "gu", "ta", "te", "kn", "ml", "si", "th", "lo",
-    "my", "km", "ko", "ja", "zh-CN", "zh-TW"
+    "af", "az"
 ]
 
 
@@ -77,7 +70,8 @@ def retrieve_data():
 # Example: Retrieve business names from the data file
 businesses = retrieve_data()
 
-# Sample languages (replace with your actual list of languages)
+# List of languages (example languages; you can modify this list)
+languages = ["en", "zh-TW"]
 
 # State tracking
 current_business_index = 0
@@ -92,7 +86,7 @@ def get_next():
     global current_business_index, current_language_index
 
     if current_business_index >= len(businesses):
-        return {"status": "done"}
+        return {"status": "done"} 
 
     business_name = businesses[current_business_index]
     language_code = languages[current_language_index]
@@ -103,10 +97,9 @@ def get_next():
 def submit_data(data: DataRequest):
     global current_language_index, current_business_index
 
-    # Store the extracted business name and language
-    business_name = data.business_name
+    # Store the extracted business name and current language as a tuple
     language_code = languages[current_language_index]
-    extracted_data.append((business_name, language_code))
+    extracted_data.append((data.business_name, language_code))
 
     # Move to the next language
     current_language_index += 1
@@ -125,14 +118,16 @@ def submit_data(data: DataRequest):
 
 @app.get("/download")
 def download_csv():
-    # Generate a CSV file with "Business Name" and "Language" columns
+    # Generate a CSV file with Business Name and Language columns
     csv_filename = "business_report.csv"
     with open(csv_filename, mode="w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
+        # Write header
         writer.writerow(["Business Name", "Language"])
+        # Write each business name and language pair
         writer.writerows(extracted_data)
 
-    # Clear the data in the JSON file
+         # Clear the data in the JSON file
     with data_file.open("w") as file:
         json.dump([], file)
 
