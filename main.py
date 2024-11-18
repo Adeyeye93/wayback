@@ -31,15 +31,21 @@ async def wayback_proxy(url: str):
 
 
 languages = [
-    "af", "az"
+    "af", "az","ur"
 ]
 
 
+# Define the path for the JSON data file
 data_file = Path("business_data.json")
+data_saved = Path("saved_data.json")
 
 # Initialize the JSON file if it doesn't exist
 if not data_file.exists():
     data_file.write_text("[]")
+
+if not data_saved.exists():
+    data_saved.write_text('{"name": "value"}')
+
 
 # Define a data model for the request body
 class BusinessData(BaseModel):
@@ -60,6 +66,53 @@ def save_data(data: BusinessData):
     
     return {"status": "saved"}
 
+# Pydantic model
+class BusinessData(BaseModel):
+    business_name: str
+    value: str 
+
+@app.post("/save_permanent")
+def save_data(data: BusinessData):
+    # Load the existing data from the file
+    if data_saved.exists():
+        with data_saved.open("r") as file:
+            existing_data = json.load(file)
+    else:
+        existing_data = {}  # Initialize as an empty dictionary if the file doesn't exist
+
+    # Ensure existing_data is a dictionary
+    if not isinstance(existing_data, dict):
+        existing_data = {}
+
+    # Create a unique key using the business name
+    unique_key = data.business_name
+
+    # Add the new key-value pair to the dictionary
+    existing_data[unique_key] = data.value
+
+    # Save the updated data back to the file
+    with data_saved.open("w") as file:
+        json.dump(existing_data, file, indent=4)
+    
+    return {"status": "saved"}
+
+@app.get("/get_saved_data")
+def get_values():
+    # Load the existing data from the file
+    if data_saved.exists():
+        with data_saved.open("r") as file:
+            existing_data = json.load(file)
+    else:
+        existing_data = {}
+
+    # Ensure existing_data is a dictionary
+    if not isinstance(existing_data, dict):
+        return {"error": "Data format is incorrect"}
+
+    # Return all the values from the dictionary
+    values = list(existing_data.values())
+    return {"values": values}
+
 @app.get("/retrieve")
 def retrieve_data():
     # Load and return the data from the file
@@ -69,9 +122,7 @@ def retrieve_data():
 
 # Example: Retrieve business names from the data file
 businesses = retrieve_data()
-
-# List of languages (example languages; you can modify this list)
-languages = ["en", "zh-TW"]
+print(businesses)
 
 # State tracking
 current_business_index = 0
@@ -86,6 +137,7 @@ def get_next():
     global current_business_index, current_language_index
 
     if current_business_index >= len(businesses):
+        current_business_index = 0
         return {"status": "done"} 
 
     business_name = businesses[current_business_index]
@@ -127,11 +179,15 @@ def download_csv():
         # Write each business name and language pair
         writer.writerows(extracted_data)
 
-         # Clear the data in the JSON file
+    return FileResponse(csv_filename, media_type="text/csv", filename=csv_filename)
+
+@app.delete("/delete-all")
+def delete_all_data():
+    # Clear the data in the JSON file by writing an empty list
     with data_file.open("w") as file:
         json.dump([], file)
-
-    return FileResponse(csv_filename, media_type="text/csv", filename=csv_filename)
+    
+    return {"status": "all data deleted"}
 
 if __name__ == "__main__":
         uvicorn.run(app, host="0.0.0.0", port=8000)
