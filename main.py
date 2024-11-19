@@ -34,6 +34,12 @@ languages = [
     "af", "az","ur"
 ]
 
+def reset_state():
+    """Helper function to reset the global state."""
+    global current_business_index, current_language_index, extracted_data
+    current_business_index = 0
+    current_language_index = 0
+    extracted_data.clear()
 
 # Define the path for the JSON data file
 data_file = Path("business_data.json")
@@ -44,7 +50,7 @@ if not data_file.exists():
     data_file.write_text("[]")
 
 if not data_saved.exists():
-    data_saved.write_text('{"name": "value"}')
+    data_saved.write_text('{}')
 
 
 # Define a data model for the request body
@@ -121,8 +127,6 @@ def retrieve_data():
     return data
 
 # Example: Retrieve business names from the data file
-businesses = retrieve_data()
-print(businesses)
 
 # State tracking
 current_business_index = 0
@@ -134,12 +138,14 @@ class DataRequest(BaseModel):
 
 @app.get("/next")
 def get_next():
+    businesses = retrieve_data()
     global current_business_index, current_language_index
 
     if current_business_index >= len(businesses):
-        current_business_index = 0
+        reset_state()
         return {"status": "done"} 
 
+    # Get the current business name and language code
     business_name = businesses[current_business_index]
     language_code = languages[current_language_index]
 
@@ -147,9 +153,10 @@ def get_next():
 
 @app.post("/submit")
 def submit_data(data: DataRequest):
+    businesses = retrieve_data()
     global current_language_index, current_business_index
 
-    # Store the extracted business name and current language as a tuple
+    # Store the extracted business name and language
     language_code = languages[current_language_index]
     extracted_data.append((data.business_name, language_code))
 
@@ -159,14 +166,13 @@ def submit_data(data: DataRequest):
         current_language_index = 0
         current_business_index += 1
 
-    # Delete the processed business name if we finished all languages
-    if current_language_index == 0 and current_business_index > 0:
-        businesses.pop(current_business_index - 1)
-
+    # Check if all businesses have been processed
     if current_business_index >= len(businesses):
         return {"status": "done"}
 
     return {"status": "success"}
+
+
 
 @app.get("/download")
 def download_csv():
@@ -178,7 +184,7 @@ def download_csv():
         writer.writerow(["Business Name", "Language"])
         # Write each business name and language pair
         writer.writerows(extracted_data)
-
+        reset_state()
     return FileResponse(csv_filename, media_type="text/csv", filename=csv_filename)
 
 @app.delete("/delete-all")
@@ -188,6 +194,7 @@ def delete_all_data():
         json.dump([], file)
     
     return {"status": "all data deleted"}
+
 
 if __name__ == "__main__":
         uvicorn.run(app, host="0.0.0.0", port=8000)
