@@ -37,7 +37,6 @@ languages = [
 def reset_state():
     """Helper function to reset the global state."""
     global current_business_index, current_language_index, extracted_data
-    current_business_index = 0
     current_language_index = 0
     extracted_data.clear()
 
@@ -166,18 +165,19 @@ def submit_data(data: DataRequest):
         current_language_index = 0
         current_business_index += 1
 
-    # Check if all businesses have been processed
-    if current_business_index >= len(businesses):
-        return {"status": "done"}
+        # Check if there are more businesses to process
+        if current_business_index < len(businesses):
+            return {"status": "next_business"}  # Signal to move to the next business
+        else:
+            return {"status": "done"}  # Signal that all businesses are processed
 
-    return {"status": "success"}
-
+    return {"status": "success"}  # Continue processing the current business
 
 
 @app.get("/download")
 def download_csv():
     # Generate a CSV file with Business Name and Language columns
-    csv_filename = "business_report.csv"
+    csv_filename = "temporary_business_data.csv"
     with open(csv_filename, mode="w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         # Write header
