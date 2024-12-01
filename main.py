@@ -29,17 +29,26 @@ async def wayback_proxy(url: str):
         return {"error": str(e)}
 
 
-
-languages = [
-    "af", "az", "id", "ms", "bs", "ca", "cs", "da", "de", "et",
-    "en", "es", "es-419", "eu", "fil", "fr", "gl", "hr", "zu",
-    "is", "it", "sw", "lv", "lt", "hu", "nl", "no", "uz", "pl",
-    "pt-BR", "pt-PT", "ro", "sq", "sk", "sl", "fi", "sv", "vi",
-    "tr", "el", "bg", "ky", "kk", "mk", "mn", "ru", "sr", "uk",
-    "ka", "hy", "he", "ur", "ar", "fa", "am", "ne", "hi", "mr",
-    "bn", "pa", "gu", "ta", "te", "kn", "ml", "si", "th", "lo",
-    "my", "km", "ko", "ja", "zh-CN", "zh-TW"
-]
+def get_languages_from_json(file_path):
+    try:
+        with open(file_path, 'r') as file:
+            data = json.load(file)
+            # Assuming the JSON structure is a list at the root level
+            if isinstance(data, list):
+                return data
+            else:
+                raise ValueError("Invalid JSON structure: Expected a list.")
+    except FileNotFoundError:
+        print(f"Error: The file '{file_path}' was not found.")
+        return []
+    except json.JSONDecodeError:
+        print("Error: Failed to decode JSON.")
+        return []
+    except ValueError as e:
+        print(f"Error: {e}")
+        return []
+language_path = "selected_languages.json"
+languages = get_languages_from_json(language_path)
 
 def reset_state():
     """Helper function to reset the global state."""
@@ -201,6 +210,39 @@ def delete_all_data():
         json.dump([], file)
     
     return {"status": "all data deleted"}
+
+
+class LanguageRequest(BaseModel):
+    languages: list[str]
+
+@app.post("/save-languages")
+def save_languages(request: LanguageRequest):
+    try:
+        with open("selected_languages.json", "w") as file:
+            json.dump(request.languages, file)
+        return {"message": "Languages saved successfully"}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.delete("/delete-saved")
+async def delete_data(key: str):
+    try:
+        # Read the existing data from the JSON file
+        with open(data_saved, 'r') as file:
+            data = json.load(file)
+
+        if key in data:
+            del data[key]
+            with open(data_saved, 'w') as file:
+                json.dump(data, file, indent=4)
+            return {"message": "Data deleted successfully"}
+        else:
+            raise HTTPException(status_code=404, detail="Key not found")
+
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="Data file not found")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Failed to decode JSON")
 
 
 if __name__ == "__main__":
