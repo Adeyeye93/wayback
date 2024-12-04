@@ -1,12 +1,18 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 import csv
-from fastapi.responses import FileResponse
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+import time
+from fastapi.responses import FileResponse, JSONResponse
 import json
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 import requests
+
 
 app = FastAPI()
 
@@ -17,17 +23,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"], 
 )
-
-@app.get("/wayback/")
-async def wayback_proxy(url: str):
-    try:
-        wayback_url = f"https://web.archive.org/web/timemap/json?url={url}&matchType=prefix&collapse=urlkey&output=json&fl=original,mimetype,timestamp,endtimestamp,groupcount,uniqcount&filter=!statuscode:[45]..&limit=50000"
-        response = requests.get(wayback_url)
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as e:
-        return {"error": str(e)}
-
 
 def get_languages_from_json(file_path):
     try:
@@ -47,8 +42,6 @@ def get_languages_from_json(file_path):
     except ValueError as e:
         print(f"Error: {e}")
         return []
-language_path = "selected_languages.json"
-languages = get_languages_from_json(language_path)
 
 def reset_state():
     """Helper function to reset the global state."""
@@ -56,7 +49,6 @@ def reset_state():
     current_language_index = 0
     extracted_data.clear()
 
-# Define the path for the JSON data file
 data_file = Path("business_data.json")
 data_saved = Path("saved_data.json")
 
@@ -66,6 +58,156 @@ if not data_file.exists():
 
 if not data_saved.exists():
     data_saved.write_text('{}')
+
+language_path = "selected_languages.json"
+languages = get_languages_from_json(language_path)
+
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            await connection.send_json(message)
+
+manager = ConnectionManager()
+
+def get_webdriver():
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    service = Service()  # Update this path
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    return driver
+
+@app.get("/wayback/")
+async def wayback_proxy(url: str):
+    try:
+        wayback_url = f"https://web.archive.org/web/timemap/json?url={url}&matchType=prefix&collapse=urlkey&output=json&fl=original,mimetype,timestamp,endtimestamp,groupcount,uniqcount&filter=!statuscode:[45]..&limit=50000"
+        response = requests.get(wayback_url)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        return {"error": str(e)}
+
+async def extract_data(business_name: str, languages: list) -> list:
+    driver = get_webdriver()
+    data = []
+    try:
+        for language in languages:
+            # Notify WebSocket of current language
+            message = {"event": "processing", "business": business_name, "language": language}
+            await manager.broadcast(message)
+
+            # Navigate to Google Maps
+            driver.get("https://www.google.com/maps")
+            time.sleep(2)  # Replace with a more robust wait strategy if necessary
+
+            # Search for the business
+            search_box = driver.find_element(By.ID, "searchboxinput")
+            print(f"search_box: {search_box}")
+            search_box.clear()
+            search_box.send_keys(business_name)
+            search_box.submit()
+            time.sleep(5)  # Adjust or replace with an explicit wait
+
+            # Change language
+            current_url = driver.current_url
+            new_url = f"{current_url.split('?')[0]}?hl={language}"
+            driver.get(new_url)
+            time.sleep(3)  # Adjust or replace with an explicit wait
+
+            # Extract business name
+            try:
+                # Get the page title
+                full_title = driver.find_element(By.TAG_NAME, "title").get_attribute("textContent")
+                
+                # Remove " - Google Maps" from the title
+                if " - Google Maps" in full_title:
+                    business_title = full_title.replace(" - Google Maps", "").strip()
+                else:
+                    business_title = full_title.strip()
+            except Exception:
+                business_title = "Name not found"
+
+            data.append({"Business Name": business_title, "Language": language})
+
+            # Notify WebSocket of progress
+            await manager.broadcast(
+                {"event": "language_completed", "business": business_name, "language": language}
+            )
+
+    finally:
+        driver.quit()
+    
+    # Notify WebSocket of business completion
+    await manager.broadcast({"event": "business_completed", "business": business_name})
+    return data
+
+
+def write_csv(business_name: str, data: list) -> str:
+    csv_filename = f"{business_name.replace(' ', '_')}_data.csv"
+    with open(csv_filename, mode="w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Business Name", "Language"])
+        writer.writerows([(item["Business Name"], item["Language"]) for item in data])
+    return csv_filename
+
+# WebSocket endpoint
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+# Start automation
+@app.post("/start-automation")
+async def start_automation():
+    
+
+    business_names = read_json(data_file)
+
+    if not isinstance(business_names, list) or not isinstance(languages, list):
+        return JSONResponse(content={"error": "Invalid file formats"}, status_code=400)
+
+    for business in business_names:
+        extracted_data = await extract_data(business, languages)
+        csv_file = write_csv(business, extracted_data)
+
+        # Notify WebSocket that download is ready
+        message = {"event": "download", "business": business, "csv_file": csv_file}
+        await manager.broadcast(message)
+
+    return JSONResponse(content={"message": "Automation completed. All CSV files are ready."})
+
+# Utility to read JSON files
+def read_json(file_path):
+    with open(file_path, "r", encoding="utf-8") as file:
+        return json.load(file)
+
+# Download CSV
+@app.get("/download/{csv_filename}")
+def download_csv(csv_filename: str):
+    file_path = Path(csv_filename)
+    if not file_path.exists():
+        return JSONResponse(content={"error": "CSV file not found"}, status_code=404)
+    return FileResponse(file_path, media_type="text/csv", filename=file_path.name)
+
+
+
+# Define the path for the JSON data file
 
 
 # Define a data model for the request body
@@ -141,67 +283,6 @@ def retrieve_data():
         data = json.load(file)
     return data
 
-# Example: Retrieve business names from the data file
-
-# State tracking
-current_business_index = 0
-current_language_index = 0
-extracted_data = []  # This will store tuples of (business name, language)
-
-class DataRequest(BaseModel):
-    business_name: str
-
-@app.get("/next")
-def get_next():
-    businesses = retrieve_data()
-    global current_business_index, current_language_index
-
-    if current_business_index >= len(businesses):
-        reset_state()
-        return {"status": "done"} 
-
-    # Get the current business name and language code
-    business_name = businesses[current_business_index]
-    language_code = languages[current_language_index]
-
-    return {"business_name": business_name, "language": language_code}
-
-@app.post("/submit")
-def submit_data(data: DataRequest):
-    businesses = retrieve_data()
-    global current_language_index, current_business_index
-
-    # Store the extracted business name and language
-    language_code = languages[current_language_index]
-    extracted_data.append((data.business_name, language_code))
-
-    # Move to the next language
-    current_language_index += 1
-    if current_language_index >= len(languages):
-        current_language_index = 0
-        current_business_index += 1
-
-        # Check if there are more businesses to process
-        if current_business_index < len(businesses):
-            return {"status": "next_business"}  # Signal to move to the next business
-        else:
-            return {"status": "done"}  # Signal that all businesses are processed
-
-    return {"status": "success"}  # Continue processing the current business
-
-
-@app.get("/download")
-def download_csv():
-    # Generate a CSV file with Business Name and Language columns
-    csv_filename = "temporary_business_data.csv"
-    with open(csv_filename, mode="w", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-        # Write header
-        writer.writerow(["Business Name", "Language"])
-        # Write each business name and language pair
-        writer.writerows(extracted_data)
-        reset_state()
-    return FileResponse(csv_filename, media_type="text/csv", filename=csv_filename)
 
 @app.delete("/delete-all")
 def delete_all_data():
