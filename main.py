@@ -106,27 +106,6 @@ def read_json(file_path):
     with open(file_path, "r", encoding="utf-8") as file:
         return json.load(file)
 
-
-# Define a data model for the request body
-# class BusinessData(BaseModel):
-#     business_name: str
-
-# @app.post("/save")
-# def save_data(data: BusinessData):
-#     # Load the existing data from the file
-#     with data_file.open("r") as file:
-#         existing_data = json.load(file)
-    
-#     # Append only the business name
-#     existing_data.append(data.business_name)
-    
-#     # Save the updated data back to the file
-#     with data_file.open("w") as file:
-#         json.dump(existing_data, file)
-    
-#     return {"status": "saved"}
-
-# Pydantic model
 class BusinessData(BaseModel):
     business_name: str
     value: list[str] 
@@ -163,18 +142,6 @@ def get_values():
     
     return data
 
-# @app.get("/retrieve")
-# def retrieve_data():
-#     # Load and return the data from the file
-#     with data_file.open("r") as file:
-#         data = json.load(file)
-#     return data
-
-@app.get("/retrieve_lang")
-def retrieve_lang():
-    with language_path.open("r") as file:
-        data = json.load(file)
-    return data
 
 
 @app.delete("/delete-all")
