@@ -5,6 +5,7 @@ import csv
 import time
 from fastapi.responses import FileResponse, JSONResponse
 import json
+import os
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 from selenium import webdriver
@@ -52,13 +53,21 @@ def reset_state():
 
 data_file = Path("business_data.json")
 data_saved = Path("saved_data.json")
+searched_data = Path("searched_data.json")
 
 # Initialize the JSON file if it doesn't exist
-if not data_file.exists():
-    data_file.write_text("[]")
 
 if not data_saved.exists():
     data_saved.write_text('{}')
+
+if not os.path.exists(searched_data):
+    with open(searched_data, "w") as f:
+        json.dump({}, f)
+
+if not os.path.exists(data_file):
+    with open(data_file, "w") as f:
+        json.dump({}, f)
+
 
 language_path = Path("selected_languages.json")
 languages = get_languages_from_json(language_path)
@@ -99,28 +108,28 @@ def read_json(file_path):
 
 
 # Define a data model for the request body
-class BusinessData(BaseModel):
-    business_name: str
+# class BusinessData(BaseModel):
+#     business_name: str
 
-@app.post("/save")
-def save_data(data: BusinessData):
-    # Load the existing data from the file
-    with data_file.open("r") as file:
-        existing_data = json.load(file)
+# @app.post("/save")
+# def save_data(data: BusinessData):
+#     # Load the existing data from the file
+#     with data_file.open("r") as file:
+#         existing_data = json.load(file)
     
-    # Append only the business name
-    existing_data.append(data.business_name)
+#     # Append only the business name
+#     existing_data.append(data.business_name)
     
-    # Save the updated data back to the file
-    with data_file.open("w") as file:
-        json.dump(existing_data, file)
+#     # Save the updated data back to the file
+#     with data_file.open("w") as file:
+#         json.dump(existing_data, file)
     
-    return {"status": "saved"}
+#     return {"status": "saved"}
 
 # Pydantic model
 class BusinessData(BaseModel):
     business_name: str
-    value: str 
+    value: list[str] 
 
 @app.post("/save_permanent")
 def save_data(data: BusinessData):
@@ -149,27 +158,17 @@ def save_data(data: BusinessData):
 
 @app.get("/get_saved_data")
 def get_values():
-    # Load the existing data from the file
-    if data_saved.exists():
-        with data_saved.open("r") as file:
-            existing_data = json.load(file)
-    else:
-        existing_data = {}
-
-    # Ensure existing_data is a dictionary
-    if not isinstance(existing_data, dict):
-        return {"error": "Data format is incorrect"}
-
-    # Return all the values from the dictionary
-    values = list(existing_data.values())
-    return {"values": values}
-
-@app.get("/retrieve")
-def retrieve_data():
-    # Load and return the data from the file
-    with data_file.open("r") as file:
-        data = json.load(file)
+    with open(data_saved, "r") as f:
+        data = json.load(f)
+    
     return data
+
+# @app.get("/retrieve")
+# def retrieve_data():
+#     # Load and return the data from the file
+#     with data_file.open("r") as file:
+#         data = json.load(file)
+#     return data
 
 @app.get("/retrieve_lang")
 def retrieve_lang():
@@ -182,7 +181,7 @@ def retrieve_lang():
 def delete_all_data():
     # Clear the data in the JSON file by writing an empty list
     with data_file.open("w") as file:
-        json.dump([], file)
+        json.dump({}, file)
     
     return {"status": "all data deleted"}
 
@@ -218,6 +217,54 @@ async def delete_data(key: str):
         raise HTTPException(status_code=500, detail="Data file not found")
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Failed to decode JSON")
+
+@app.get("/get/{business_name}")
+async def get_business(business_name: str):
+    """
+    Retrieve languages supported by a specific business.
+    """
+    # Load existing data
+    with open(searched_data, "r") as f:
+        data = json.load(f)
+    
+    # Check if the business exists
+    if business_name not in data:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    return {business_name: data[business_name]}
+
+@app.get("/retrieve")
+async def list_businesses():
+    """
+    List all businesses and their respective languages.
+    """
+    # Load existing data
+    with open(data_file, "r") as f:
+        data = json.load(f)
+    
+    return data
+
+class BusinessEntry(BaseModel):
+    business_name: str
+    languages: List[str]
+
+@app.post("/save")
+async def add_business(entry: BusinessEntry):
+    """
+    Add or update a business and its supported languages in the JSON file.
+    """
+    # Load existing data
+    with open(data_file, "r") as f:
+        data = json.load(f)
+    
+    # Add or update the business entry
+    data[entry.business_name] = entry.languages
+
+    # Save back to the file
+    with open(data_file, "w") as f:
+        json.dump(data, f, indent=4)
+    
+    return {"message": "Business added/updated successfully"}
 
 
 if __name__ == "__main__":
