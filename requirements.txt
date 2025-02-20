@@ -3,4 +3,4 @@ fastapi>=0.1.1
 requests
 pydantic
 selenium
-pydantic[email]g
+pydantic[email]
