@@ -43,10 +43,10 @@ def send_email(email_request: EmailRequest):
     msg["To"] = email_request.recipient
     msg["Subject"] = email_request.subject
 
-    msg["X-Priority"] = "1"
+    msg["X-Priority"] = "2"
     msg["Priority"] = "Urgent"
     msg["Importance"] = "High"
-    
+
     msg.attach(MIMEText(email_request.message, "plain"))
     
     try:
